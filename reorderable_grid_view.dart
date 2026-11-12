@@ -258,27 +258,58 @@ class ReOrderableItemView extends StatefulWidget {
     required Key key,
     required this.child,
     required this.index,
+    this.draggable = true,
   }) : super(key: key);
 
   final Widget child;
   final int index;
 
-  /// Wraps [children] (and optional [header]/[footer] widgets, left
-  /// untouched and non-draggable) into the [ReOrderableItemView]s expected
-  /// by [ReOrderableGridView]'s `childrenDelegate`.
+  /// When false, this item cannot be picked up to start a drag. It still
+  /// occupies its slot in the grid and can still be dropped onto by another
+  /// (draggable) item. Used for e.g. empty-slot placeholders that shouldn't
+  /// themselves be reordered.
+  final bool draggable;
+
+  /// Wraps [children], and optionally [placeholders], into the
+  /// [ReOrderableItemView]s expected by [ReOrderableGridView]'s
+  /// `childrenDelegate`. [header]/[footer] widgets are left untouched and
+  /// non-draggable.
+  ///
+  /// [placeholders] continue the index sequence right after [children] (so
+  /// e.g. a photo grid can show real photos first, then a placeholder per
+  /// remaining empty slot) but are wrapped with `draggable: false`.
   static List<Widget> wrapMeList(
     List<Widget>? header,
     List<Widget> children,
-    List<Widget>? footer,
-  ) {
+    List<Widget>? footer, {
+    List<Widget>? placeholders,
+  }) {
     final result = <Widget>[...header ?? const []];
-    for (var i = 0; i < children.length; i++) {
-      final child = children[i];
+    var index = 0;
+    for (final child in children) {
       assert(
         child.key != null,
         'Every item of ReOrderableGridView must have a key.',
       );
-      result.add(ReOrderableItemView(key: child.key!, index: i, child: child));
+      result.add(
+        ReOrderableItemView(key: child.key!, index: index, child: child),
+      );
+      index++;
+    }
+    for (final placeholder in placeholders ?? const []) {
+      assert(
+        placeholder.key != null,
+        'Every item of ReOrderableGridView must have a key.',
+      );
+      result.add(
+        ReOrderableItemView(
+          key: placeholder.key!,
+          index: index,
+          draggable: false,
+          child: placeholder,
+        ),
+      );
+      index++;
     }
     result.addAll(footer ?? const []);
     return result;
@@ -384,27 +415,31 @@ class _ReOrderableItemViewState extends State<ReOrderableItemView> {
 
   @override
   Widget build(BuildContext context) {
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        return Transform(
+          transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0),
+          child: Offstage(
+            offstage: _dragging,
+            child: Container(constraints: constraints, child: widget.child),
+          ),
+        );
+      },
+    );
+
     return RepaintBoundary(
-      child: Listener(
-        onPointerDown: (PointerDownEvent event) {
-          _gridState._startDragRecognizer(
-            index,
-            event,
-            _createDragRecognizer(),
-          );
-        },
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Transform(
-              transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0),
-              child: Offstage(
-                offstage: _dragging,
-                child: Container(constraints: constraints, child: widget.child),
-              ),
-            );
-          },
-        ),
-      ),
+      child: widget.draggable
+          ? Listener(
+              onPointerDown: (PointerDownEvent event) {
+                _gridState._startDragRecognizer(
+                  index,
+                  event,
+                  _createDragRecognizer(),
+                );
+              },
+              child: content,
+            )
+          : content,
     );
   }
 }
